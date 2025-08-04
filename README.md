@@ -16,37 +16,45 @@ Este proyecto implementa un chatbot inteligente basado en arquitectura RAG (Retr
 - **CloudFront:** Distribuye y sirve la aplicación React de manera serverless y global.
 - **React Frontend:** Interfaz de usuario para interactuar con el chatbot.
 
+![Arquitectura de la Solución](infra%20composer%20image.png)
+
 ## Estructura del Repositorio
 
 - **aws_infrastructure/**  
   Plantillas de CloudFormation y archivos de configuración para desplegar la infraestructura (Aurora, Lambda, API Gateway, CloudFront, etc.).
 - **client/**  
   Código fuente de la aplicación React que sirve como interfaz del chatbot.
-- **lambda/**  
+- **aws_resources/genai_handler/**  
   Código fuente de la función Lambda que conecta Aurora PostgreSQL, realiza la búsqueda semántica y consulta la API de OpenAI.
-- **glue_jobs/**  
+- **aws_resources/glue/**  
   Scripts para cargar y transformar los datos de películas desde S3 hacia Aurora PostgreSQL.
-- **data/**  
-  Ejemplo de archivos de datos de películas (CSV) para pruebas y carga inicial.
+- **aws_resources/lambda_layers/**
+  Layer de OpenAI creada para oider acceder al sdk de OpenAI desde lambda
 - **README.md**  
   Este archivo, con la documentación y guía de uso del repositorio.
 
 ## Despliegue y Ejecución
 
-1. **Desplegar la infraestructura:**  
+Si bien la manera correcta de haber implementado este flujo, debio ser con un pipeline de devops, dado el tiempo no logré hacer dicho pipeline para el despliegue, por lo que habria que ejecutar los siguientes pasos a mano.
+
+1. **Recursos previos al despliegue**  
+   Utiliza los archivos que estan en `aws_resources/` y despliegalos en un bucket de s3 para luego referenciar en el despligue de la infraestructura. Estos archivos deben ser cargados antes ya que el `aws_infrastructure/template.yml` los referencia para desplegar las [lambdas, glue jobs, layers]
+
+2. **Desplegar el frontend:**  
+   Construye y sube la aplicación React a S3, para luego poder referenciarla desde el despliegue de la infra en cloudfront.
+
+3. **Desplegar la infraestructura:**  
    Utiliza los archivos de CloudFormation en `aws_infrastructure/` para crear los recursos necesarios en AWS. Asegúrate de configurar correctamente los parámetros de red, subredes y roles.
 
-2. **Cargar los datos:**  
+4. **Cargar los datos:**  
    Sube el archivo CSV de películas a S3 y ejecuta el Glue Job para cargar los datos y generar los embeddings en Aurora PostgreSQL.
 
-3. **Configurar y desplegar Lambda:**  
-   Sube el código de Lambda y configura las variables de entorno necesarias (endpoint de Aurora, ARN del secreto, clave de OpenAI, etc.).
-
-4. **Desplegar el frontend:**  
-   Construye y sube la aplicación React a S3, y configura CloudFront para servirla globalmente.
+5. **Ejecutar el job de glue**
+   Ejecutar el Job de glue con el fin de llevar los registros con el embedding a la tabla Aurora PostgreSQL y que puedan ser consumidos luego por la lambda
 
 5. **Probar el chatbot:**  
-   Accede a la URL de CloudFront y realiza preguntas al chatbot. El flujo completo irá desde el frontend, pasando por API Gateway y Lambda, hasta Aurora y OpenAI, devolviendo respuestas enriquecidas al usuario.
+   Accede a la URL de CloudFront [Chatbot de peliculas](https://d3kjexr2r1pqgf.cloudfront.net/) y realiza preguntas al chatbot. El flujo completo irá desde el frontend, pasando por API Gateway y Lambda, hasta Aurora y OpenAI, devolviendo respuestas enriquecidas al usuario. Vale la pena recalcar que este chatbot se implemento con memoria, por lo que va a tener en su contexto la información de preguntas anteriores, tal como se ve en la siguiente imagen:
+![Chatbot con memoria](chat_example_image.png)
 
 ## Notas y Recomendaciones
 

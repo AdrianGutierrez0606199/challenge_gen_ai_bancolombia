@@ -179,8 +179,6 @@ function ChatApp(props) {
         );
       }
       console.log("API response:", response.choices);
-      // FIX NOTE: THIS IS A HACK, AND ITS STUPIDLY REPETITIVE. REFACTOR THIS.
-      // Legacy OpenAI API
       if (
         response &&
         "chat_memory" in response &&
