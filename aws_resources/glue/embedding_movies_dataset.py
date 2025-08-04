@@ -9,15 +9,18 @@ import boto3
 import json
 
 # Define the parameters you expect
-args = getResolvedOptions(sys.argv, ['OPENAI_API_KEY','DB_ARN', 'DB_SECRET', 'DB_NAME','MOVIES_DATA_PATH','MOVIES_TABLE'])
+try:
+    args = getResolvedOptions(sys.argv, ['OPENAI_API_KEY','DB_ARN', 'DB_SECRET', 'DB_NAME','MOVIES_DATA_PATH','MOVIES_TABLE'])
 
-openai_api_key = args["OPENAI_API_KEY"]
-db_arn = args["DB_ARN"]
-db_name = args["DB_NAME"]
-db_secret = args["DB_SECRET"]
-input_file_path = args["MOVIES_DATA_PATH"]
-movies_table = args["MOVIES_TABLE"]
-
+    openai_api_key = args["OPENAI_API_KEY"]
+    db_arn = args["DB_ARN"]
+    db_name = args["DB_NAME"]
+    db_secret = args["DB_SECRET"]
+    input_file_path = args["MOVIES_DATA_PATH"]
+    movies_table = args["MOVIES_TABLE"]
+except Exception as e:
+    print(f"Error retrieving parameters: {e}")
+    raise ValueError(f"Missing required parameters: {e}")
 
 BATCH_SIZE = 50  # Define the batch size for processing
 
@@ -69,92 +72,109 @@ def batch_insert_movies_vector_1536(movies_data):
         print(f"Batch vector insert error: {e}")
         raise
 
-# Configura la API Key
-openai.api_key = openai_api_key
+try:
+    # Configura la API Key
+    openai.api_key = openai_api_key
 
-# client connection to rds-data
-client = boto3.client("rds-data")
+    # client connection to rds-data
+    client = boto3.client("rds-data")
 
-# 1. Leer CSV (puedes reemplazar por boto3 para leer de S3)
-df = pd.read_csv(input_file_path)
+except Exception as e:
+    print(f"Error setting up OpenAI or RDS Data API client: {e}")
+    raise Exception(f"Failed to set up clients: {e}")
 
-# create the table if it does not exist
-create_table_query = f"""
-CREATE TABLE IF NOT EXISTS {movies_table} (
-    id SERIAL PRIMARY KEY,
-    title TEXT,
-    image TEXT,
-    plot TEXT,
-    embedding VECTOR(1536)
-);
-"""
-response = client.execute_statement(
-    resourceArn=db_arn,
-    secretArn=db_secret,
-    database=db_name,
-    sql=create_table_query
-)
-print(response)
+# Leer CSV desde s3
+try:
+    df = pd.read_csv(input_file_path)
+except Exception as e:
+    print(f"Error reading CSV file from S3: {e}")
+    raise Exception(f"Failed to read CSV file: {e}")
+
+try:
+    # create the table if it does not exist
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {movies_table} (
+        id SERIAL PRIMARY KEY,
+        title TEXT,
+        image TEXT,
+        plot TEXT,
+        embedding VECTOR(1536)
+    );
+    """
+    response = client.execute_statement(
+        resourceArn=db_arn,
+        secretArn=db_secret,
+        database=db_name,
+        sql=create_table_query
+    )
+    print(response)
+except Exception as e:
+    print(f"Error creating table {movies_table} or accessing the database {db_name}: {e}")
+    raise Exception(f"Failed to create table: {e}")
 
 # create variables for batch processing
 batch_counter = 0
 embeddings = []
 
-for _, row in df.iterrows():
-    
-    ## in case I would like to get a description of the image used (not implemented because of the token cost)
-    # try:
-    #     response = openai.chat.completions.create(
-    #         model="gpt-4o-mini",  # or gpt-4o
-    #         messages=[
-    #             {"role": "user", "content": [
-    #                 {"type": "text", "text": f"Describe this poster of the movie'{row['title']}'"},
-    #                 {"type": "image_url", "image_url": {"url": row['image']}}
-    #             ]}
-    #         ]
-    #     )
-    # except:
-    #     time.sleep(60)
-    #     response = openai.chat.completions.create(
-    #         model="gpt-4o-mini",  # or gpt-4o
-    #         messages=[
-    #             {"role": "user", "content": [
-    #                 {"type": "text", "text": f"Describe this poster of the movie'{row['title']}'"},
-    #                 {"type": "image_url", "image_url": {"url": row['image']}}
-    #             ]}
-    #         ]
-    #     )
-    #     print("image detection response:",response.choices[0].message.content)
-    # print("Total tokens:", response.usage.total_tokens)
-    text = f"Movie Title: {row['title']}\nMovie Plot: {row['plot']}\nMovie image URL:{row['image']}"
-    print(text)
-    try:
-        resp = openai.embeddings.create(
-            model="text-embedding-ada-002",
-            input=text
-        )
-    except:
-        time.sleep(60)
-        print("error retrieving response:",e)
-        resp = openai.embeddings.create(
-            model="text-embedding-ada-002",
-            input=text
-        )
-    
-    vector = resp.data[0].embedding
-    embeddings.append({"title": row["title"], "image": row["image"], "plot": row["plot"], "embedding": vector})
-    batch_counter += 1
-    if batch_counter == BATCH_SIZE:
-        # Insert batch into the database
-        response = batch_insert_movies_vector_1536(embeddings)
-        embeddings = []  # Reset the batch
-        batch_counter = 0
-        print("Batch inserted successfully, waiting for next batch...",response)
+try:
+    for _, row in df.iterrows():
+        
+        ## in case I would like to get a description of the image used (not implemented because of the token cost)
+        # try:
+        #     response = openai.chat.completions.create(
+        #         model="gpt-4o-mini",  # or gpt-4o
+        #         messages=[
+        #             {"role": "user", "content": [
+        #                 {"type": "text", "text": f"Describe this poster of the movie'{row['title']}'"},
+        #                 {"type": "image_url", "image_url": {"url": row['image']}}
+        #             ]}
+        #         ]
+        #     )
+        # except:
+        #     time.sleep(60)
+        #     response = openai.chat.completions.create(
+        #         model="gpt-4o-mini",  # or gpt-4o
+        #         messages=[
+        #             {"role": "user", "content": [
+        #                 {"type": "text", "text": f"Describe this poster of the movie'{row['title']}'"},
+        #                 {"type": "image_url", "image_url": {"url": row['image']}}
+        #             ]}
+        #         ]
+        #     )
+        #     print("image detection response:",response.choices[0].message.content)
+        # print("Total tokens:", response.usage.total_tokens)
+        text = f"Movie Title: {row['title']}\nMovie Plot: {row['plot']}\nMovie image URL:{row['image']}"
+        print(text)
+        try:
+            resp = openai.embeddings.create(
+                model="text-embedding-ada-002",
+                input=text
+            )
+        except Exception as e:
+            time.sleep(60)
+            print("error retrieving response:",e)
+            resp = openai.embeddings.create(
+                model="text-embedding-ada-002",
+                input=text
+            )
+        
+        vector = resp.data[0].embedding
+        embeddings.append({"title": row["title"], "image": row["image"], "plot": row["plot"], "embedding": vector})
+        batch_counter += 1
+        if batch_counter == BATCH_SIZE:
+            # Insert batch into the database incrementally so if the process fails, we don't lose all the data
+            response = batch_insert_movies_vector_1536(embeddings)
+            embeddings = []  # Reset the batch
+            batch_counter = 0
+            print("Batch inserted successfully, waiting for next batch...",response)
 
-if embeddings:
-    # Insert any remaining movies in the last batch
-    response = batch_insert_movies_vector_1536(embeddings)
-    print("Final batch inserted successfully", response)
+    if embeddings:
+        # Insert any remaining movies in the last batch
+        response = batch_insert_movies_vector_1536(embeddings)
+        print("Final batch inserted successfully", response)
+except Exception as e:
+    print(f"Error embedding the data from to {movies_table}: {e}")
+    raise Exception(f"Failed to embed data and upload to {movies_table}: {e}")
 
 # End the job execution
 print("embeddings generados y guardados en Aurora PostgreSQL")

@@ -1,13 +1,12 @@
-// API_KEY access is scaffolded, but in point of fact it's not really
-// necessary for this application since Terraform also creates an
-// AWS API Gateway 'Usage Plan' that limits access to the API.
-//
-// The API_KEY is only used to demonstrate how you'd set this up in
-// the event that you needed it.
+
+// The API_KEY is used to authenticate requests to the OpenAI API, in a production environment, it should be stored securely in a secret
 export const AWS_API_GATEWAY_KEY = "guNfor1cga65SEnyX0mXrandi5TGyu1Y8etO6YsC";
 export const BACKEND_API_URL =
   "https://7o9klj77j9.execute-api.us-east-1.amazonaws.com/";
 
+// this key is not the true key used to authenticate requests to the OpenAI API, it is a placeholder for demonstration purposes
+// the reason I wanted the application to handle the OpenAI API key is so that anyone can deploy the app and use the lambda as a router to the OpenAI API 
+// but the app deploying the chatbot should assume the OpenAI API costs
 export const OPENAI_API_KEY = "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";
 export const DB_ARN = "arn:aws:rds:us-east-1:136942299590:cluster:database-postgre-rag-genai";
 export const DB_NAME = "postgres";
