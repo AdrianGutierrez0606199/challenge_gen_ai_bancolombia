@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Infraestructura GenAI - Bancolombia Challenge
+
+Parameters:
+  DBName:
+    Type: String
+    Description: Nombre de la base de datos Aurora PostgreSQL
+    Default: postgres
+  OpenAIAPI:
+    Type: String
+    Description: API for OpenAI
+    Default: None,
+Resources:
+
+  S3BucketMovies:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'gen-ai-bancolombia-test-1'
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for Aurora
+      SubnetIds:
+        - subnet-0ec76117af8fd9bde
+        - subnet-0ecfb96a35329a615
+        - subnet-099d282e2f6b3e6f8
+        - subnet-04764f5d9fa0ca2e8
+        - subnet-0211b528208e96f02
+        - subnet-08f578bbda7fce286
+
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Aurora PostgreSQL
+      VpcId: vpc-00f0c2b7fa6c4aab7
+
+  AuroraDBCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      EngineMode: provisioned
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      DatabaseName: !Ref DBName
+      MasterUsername: postgres
+      ManageMasterUserPassword: true # Secrets Manager will create the secret automatically
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 2
+
+  AuroraDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBClusterIdentifier: !Ref AuroraDBCluster
+      DBInstanceClass: db.serverless
+      Engine: aurora-postgresql
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        # im going to give admin permissions to the lambda function, this is not recommended in production, but I did't have the time to create a specific policy for this function
+        - PolicyName: LambdaAdminPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: '*'
+                Resource: '*'
+
+  # openai-aws-lambda-layer-3.9.zip is a layer that contains the OpenAI Python SDK and its dependencies
+  LambdaLayerGenAI:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: GenAILayer
+      Description: Dependencias para la función Lambda GenAI
+      Content:
+        S3Bucket: gen-ai-bancolombia-test
+        S3Key: layers/openai-aws-lambda-layer-3.9.zip
+      CompatibleRuntimes:
+        - python3.9
+
+
+  LambdaGenAI:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: GenAIHandler
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 128
+      Code:
+        S3Bucket: gen-ai-bancolombia-test
+        S3Key: lambda/genai_handler.zip
+      Layers:
+        - !Ref LambdaLayerGenAI
+
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: GenAI-API
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - '*'
+        AllowMethods:
+          - POST
+        AllowHeaders:
+          - '*'
+
+  ApiGatewayIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaGenAI.Arn}/invocations
+      PayloadFormatVersion: '2.0'
+
+  ApiGatewayRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref ApiGateway
+      RouteKey: POST /chat
+      Target: !Sub integrations/${ApiGatewayIntegration}
+
+  ApiGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref ApiGateway
+      StageName: default
+      AutoDeploy: true
+
+  LambdaApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaGenAI.Arn
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/chat
+
+  # ApiGatewayResource:
+  #   Type: AWS::ApiGateway::Resource
+  #   Properties:
+  #     ParentId: !GetAtt ApiGateway.RootResourceId
+  #     PathPart: chat
+  #     RestApiId: !Ref ApiGateway
+
+  # ApiGatewayMethod:
+  #   Type: AWS::ApiGateway::Method
+  #   Properties:
+  #     RestApiId: !Ref ApiGateway
+  #     ResourceId: !Ref ApiGatewayResource
+  #     HttpMethod: POST
+  #     AuthorizationType: NONE
+  #     Integration:
+  #       Type: AWS_PROXY
+  #       IntegrationHttpMethod: POST
+  #       Uri: !Sub
+  #         - arn:aws:apigateway:${Region}:lambda:path/2015-03-31/functions/${LambdaArn}/invocations
+  #         - { Region: !Ref "AWS::Region", LambdaArn: !GetAtt LambdaGenAI.Arn }
+
+  # LambdaApiInvokePermission:
+  #   Type: AWS::Lambda::Permission
+  #   Properties:
+  #     FunctionName: !GetAtt LambdaGenAI.Arn
+  #     Action: lambda:InvokeFunction
+  #     Principal: apigateway.amazonaws.com
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - DomainName: www.genaibancolombiatest.live.s3-website-us-east-1.amazonaws.com
+            Id: GenAIOrigin
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+        DefaultCacheBehavior:
+          TargetOriginId: GenAIOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          ForwardedValues:
+            QueryString: true
+          DefaultTTL: 0
+          MinTTL: 0
+          MaxTTL: 0
+        DefaultRootObject: index.html
+
+  GlueJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonRDSFullAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+
+  GlueJob:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: LoadMoviesToAurora
+      Role: !GetAtt GlueJobRole.Arn
+      Command:
+        Name: glueetl
+        ScriptLocation: s3://aws-glue-assets-136942299590-us-east-1/scripts/embedding_movies_dataset.py
+        PythonVersion: 3
+      DefaultArguments:
+        --TempDir: s3://gen-ai-bancolombia-test/glue-temp/
+        --job-language: python
+        --additional-python-modules: openai
+        --MOVIES_TABLE: movies_context
+        --DB_NAME: postgres
+        --DB_SECRET: !GetAtt AuroraDBCluster.MasterUserSecret.SecretArn
+        --OPENAI_API_KEY: !Ref OpenAIAPI
+        --DB_ARN: arn:aws:rds:us-east-1:136942299590:cluster:database-postgre-rag-genai
+        --MOVIES_DATA_PATH: s3://gen-ai-bancolombia-test/raw/movies_data/movies-dataset.csv
+      GlueVersion: "4.0"
+      MaxRetries: 1
+      Timeout: 30
+      NumberOfWorkers: 1
+      WorkerType: Standard
+
+
+Outputs:
+  S3BucketMoviesName:
+    Description: S3 bucket for movies data
+    Value: !Ref S3BucketMovies
+  AuroraEndpoint:
+    Description: Aurora PostgreSQL endpoint
+    Value: !GetAtt AuroraDBCluster.Endpoint.Address
+  AuroraSecretArn:
+    Description: ARN del secreto de usuario maestro de Aurora
+    Value: !GetAtt AuroraDBCluster.MasterUserSecret.SecretArn
+  LambdaFunctionName:
+    Description: Lambda function name
+    Value: !Ref LambdaGenAI
+  ApiGatewayInvokeURL:
+    Description: API Gateway invoke URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod/chat'
+  CloudFrontURL:
+    Description: CloudFront distribution URL
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'

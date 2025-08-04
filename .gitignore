@@ -1,0 +1,22 @@
+# Ignore Python cache
+__pycache__/
+*.pyc
+
+# Ignore virtual environment
+venv/
+
+# Ignore environment files
+.env
+
+# Ignore node_modules
+node_modules/
+
+# ignore processed data
+# *.parquet
+
+# Ignore log files
+*.log
+
+# Ignore compiled binaries
+build/
+dist/
