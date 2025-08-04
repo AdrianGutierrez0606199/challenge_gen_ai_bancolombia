@@ -6,9 +6,9 @@ Parameters:
     Type: String
     Description: Nombre de la base de datos Aurora PostgreSQL
     Default: postgres
-  OpenAIAPIKey:
+  OpenAIAPI:
     Type: String
-    Description: Clave API de OpenAI
+    Description: API for OpenAI
     Default: None,
 Resources:
 
@@ -230,7 +230,7 @@ Resources:
         --MOVIES_TABLE: movies_context
         --DB_NAME: postgres
         --DB_SECRET: !GetAtt AuroraDBCluster.MasterUserSecret.SecretArn
-        --OPENAI_API_KEY: !Ref OpenAIAPIKey
+        --OPENAI_API_KEY: !Ref OpenAIAPI
         --DB_ARN: arn:aws:rds:us-east-1:136942299590:cluster:database-postgre-rag-genai
         --MOVIES_DATA_PATH: s3://gen-ai-bancolombia-test/raw/movies_data/movies-dataset.csv
       GlueVersion: "4.0"
