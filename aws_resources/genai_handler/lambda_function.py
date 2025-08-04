@@ -102,6 +102,8 @@ def lambda_handler(event, context):
     
     try:
         # create the prompt to send to the LLM
+        if len(chat_history_list) > 2:
+            chat_history_list = chat_history_list[-2:]  # keep only the last two messages for context
         prompt = f"Contexto:\n" + "\n".join(context_string_list) + f"\nPregunta: {text}\nRespuesta:"
         response = openai.ChatCompletion.create(model="gpt-4", messages= [system_message_1] + chat_history_list + [{"role":"user","content":prompt}])
         print("messages:", [system_message_1] + chat_history_list + [{"role":"user","content":prompt}])
