@@ -9,8 +9,7 @@ Parameters:
   OpenAIAPIKey:
     Type: String
     Description: Clave API de OpenAI
-    Default: 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
-
+    Default: None,
 Resources:
 
   S3BucketMovies:
