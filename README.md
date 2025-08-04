@@ -8,6 +8,7 @@ Este proyecto implementa un chatbot inteligente basado en arquitectura RAG (Retr
 
 ## Arquitectura de la Solución
 
+![Arquitectura de la Solución](client/public/Bancolombia_test.png)
 - **S3 Bucket:** Almacena los datos de películas en formato CSV.
 - **AWS Glue:** Carga y transforma los datos desde S3 hacia Aurora PostgreSQL.
 - **Aurora PostgreSQL (con PGVector):** Almacena las descripciones y embeddings de las películas para búsquedas semánticas.
